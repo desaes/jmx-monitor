@@ -1,5 +1,5 @@
 # jmx-monitor
-A small class that allow you to monitor a JVM using remote+http. The jboss-client.jar is not provided and you must have it.
+A small and simple class that allows you to monitor/collect objects and attributes from a JVM using remote+http. This was developed with JBOSS in mind. The jboss-client.jar is not provided and you must provide it. This may work with other JAVA Application Servers that uses JMX remote+http.
 
 # build
 ```make build```
