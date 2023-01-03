@@ -3,17 +3,27 @@ import os
 import untangle
 import argparse
 import subprocess
+import requests
 
-def print_jvm_stats(cmd):
-    with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as proc:
-        for line in proc.stdout.read().decode().split('\n'):
-            if line != "":
-                values = line.split(' ')
-                if values[-1] == "WAITING" or values[-1] == "jmx":
-                    print("JVM not responding")
-                    exit(1)
-                print(f"Statistic.{values[-2].replace('.','_')} {values[-1]}")
-                print(f"Message.{values[-2].replace('.','_')} {values[-2].replace(':','')}")
+def print_jvm_stats(cmd, host, port):
+    try:
+        response = requests.get(f"http://{host}:{port}")
+    except Exception as e:
+        print(f"Error: unable to connect to {host} on port {port}, {e}")
+    else:
+        if response.status_code == 200:
+            response_errors = ["WAITING", "refused", "jmx"]
+            with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as proc:
+                for line in proc.stdout.read().decode().split('\n'):
+                    if line != "":
+                        values = line.split(' ')
+                        if values[-1] in response_errors:
+                            print("Error: unable to retrieve a valid response from JVM")
+                            exit(1)
+                        print(f"Statistic.{values[-2].replace('.','_')} {values[-1]}")
+                        print(f"Message.{values[-2].replace('.','_')} {values[-2].replace(':','')}")
+        else:
+            print(f"Error: unable to connect to ${host} on port ${port}, status code {response.status_code}")
 
 def main():
 
@@ -52,12 +62,12 @@ def main():
     jboss_metrics = {
         '01': ("java.lang:type=ClassLoading/LoadedClassCount,TotalLoadedClassCount,UnloadedClassCount;"
             "java.lang:type=Memory/ObjectPendingFinalizationCount;"
-            "java.lang:type=Memory/HeapMemoryUsage.init,HeapMemoryUsage.used,HeapMemoryUsage.committed,HeapMemoryUsa                                                                                                                        ge.max"),
-        '02': ("java.lang:type=Memory/NonHeapMemoryUsage.init,NonHeapMemoryUsage.used,NonHeapMemoryUsage.committed,N                                                                                                                        onHeapMemoryUsage.max;"
-            "java.lang:type=Threading/TotalStartedThreadCount,ThreadCount,CurrentThreadCpuTime,CurrentThreadUserTime                                                                                                                        ;"
+            "java.lang:type=Memory/HeapMemoryUsage.init,HeapMemoryUsage.used,HeapMemoryUsage.committed,HeapMemoryUsage.max"),
+        '02': ("java.lang:type=Memory/NonHeapMemoryUsage.init,NonHeapMemoryUsage.used,NonHeapMemoryUsage.committed,NonHeapMemoryUsage.max;"
+            "java.lang:type=Threading/TotalStartedThreadCount,ThreadCount,CurrentThreadCpuTime,CurrentThreadUserTime;"
             "java.lang:type=Runtime/Uptime;"
             "java.lang:type=Compilation/TotalCompilationTime")}
-
+    
 
     server_port_map = {}
     for jboss_config_file in jboss_config_files:
@@ -65,14 +75,15 @@ def main():
         if os.path.isfile(path):
             try:
                 config = untangle.parse(os.path.join(path))
-                for server in config.host.servers.server:
-                    if hasattr(server, 'jvm'):
-                        server_port_map[server['name']] = int(jboss_initial_offset) + int(server.socket_bindings['po                                                                                                                        rt-offset'])
-                        if args.list == True:
-                            print(f"server: {server['name']:<70}",
-                                f"port: {int(jboss_initial_offset) + int(server.socket_bindings['port-offset'])}"
-                                )
-
+                if hasattr(config.host, 'servers'):
+                    for server in config.host.servers.server:
+                        if hasattr(server, 'jvm'):
+                            server_port_map[server['name']] = int(jboss_initial_offset) + int(server.socket_bindings['port-offset'])
+                            if args.list == True:
+                                print(f"server: {server['name']:<70}",
+                                    f"port: {int(jboss_initial_offset) + int(server.socket_bindings['port-offset'])}"
+                                    )
+                    
             except Exception as e:
                 print(e)
         else:
@@ -80,8 +91,8 @@ def main():
             exit(1)
 
     if (args.host is not None and
-        args.username is not None and
-        args.password is not None and
+        args.username is not None and 
+        args.password is not None and 
         args.batch is not None and
         args.list is not True):
 
@@ -103,10 +114,12 @@ def main():
 
         if args.server is not None:
             cmd.append(f"{server_port_map[args.server]}")
+            port = server_port_map[args.server]
         elif args.port is not None:
             cmd.append(args.port)
+            port = args.port
 
-        print_jvm_stats(cmd)
+        print_jvm_stats(cmd, args.host, port)
 
 if __name__ == "__main__":
     main()
